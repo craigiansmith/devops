@@ -1,7 +1,9 @@
 import fileinput
 import os
 import pathlib
+import random
 import re
+import string
 import subprocess
 
 def create_new_wagtail_project(PROJECT_NAME):
@@ -88,10 +90,12 @@ def add_heroku_files():
 
     runtime = open('runtime.txt', 'w')
     runtime.write('python-3.9.1')
+    runtime.close()
 
     compress_script = '''
 #!/usr/bin/env bash
 set -eo pipefail
+# Credit to nigma for this in the heroku-django-cookbook
 
 indent() {
     RE="s/^/       /"
@@ -131,10 +135,28 @@ def deploy_to_heroku():
     subprocess.run(['git', 'push', 'heroku', 'master'])
 
 
+def create_env_file():
+    env_file_template='''
+DJANGO_SETTINGS_MODULE=config.settings.production
+SECRET_KEY=$key
+DATABASE_URL=$url
+'''
+    template = string.Template(env_file_template)
+    subs = {
+        'url': get_db_url(),
+        'key': generate_secret_key(),
+    }
+    s = template.substitute(subs)
+
+    f = open('.env', 'w')
+    f.write(s)
+    f.close()
+
+
 def get_db_url():
     result = subprocess.run(['heroku', 'config'], capture_output=True)
     decoded_result = result.stdout.decode()
-    pattern = re.compile("(DATABASE_URL.*)")
+    pattern = re.compile("DATABASE_URL: (.*)")
     lines = decoded_result.split('\n')
     for line in lines:
         if pattern.match(line):
@@ -142,13 +164,37 @@ def get_db_url():
     return db_url
 
 
+def generate_secret_key(size=50, chars=string.ascii_uppercase + string.digits +
+        string.ascii_lowercase):
+    return ''.join(random.SystemRandom().choice(chars) for _ in range(size))
+
+
+def push_heroku_config():
+    if not is_heroku_config_installed():
+        subprocess.run(['heroku', 'plugins:install', 'git://github.com/xavdid/heroku-config.git'])
+    subprocess.run(['heroku', 'config:push'])
+
+
+def is_heroku_config_installed():
+    result = subprocess.run(['heroku', 'plugins'], capture_output=True)
+    pattern = re.compile("heroku-config")
+    return pattern.match(result.stdout.decode())
+
+
+def migrate():
+    subprocess.run(['heroku', 'run', 'python', 'manage.py', 'migrate'])
+
+
 if __name__ == '__main__':
     PROJECT_NAME = input('What is the name of the new project? ')
-    #create_new_wagtail_project(PROJECT_NAME)
-    #modify_settings(PROJECT_NAME)
-    #add_heroku_files()
-    #initialise_git_repo()
-    #deploy_to_heroku()
-    print(get_db_url())
+    create_new_wagtail_project(PROJECT_NAME)
+    modify_settings(PROJECT_NAME)
+    add_heroku_files()
+    initialise_git_repo()
+    deploy_to_heroku()
+    create_env_file()
+    push_heroku_config()
+    migrate()
+    print('Your app should be ready for development')
 
 

@@ -110,10 +110,45 @@ echo'''
     run_compress.close()
 
 
+def initialise_git_repo():
+    subprocess.run(['git', 'init'])
+    ignore = '''
+*.pyc
+__pycache__/
+*.swp
+/static/
+/media/
+.env'''
+    f = open('.gitignore', 'w')
+    f.write(ignore)
+    f.close()
+    subprocess.run(['git', 'add', './'])
+    subprocess.run(['git', 'commit', '-m', '"Initial commit"'])
+
+
+def deploy_to_heroku():
+    subprocess.run(['heroku', 'create'])
+    subprocess.run(['git', 'push', 'heroku', 'master'])
+
+
+def get_db_url():
+    result = subprocess.run(['heroku', 'config'], capture_output=True)
+    decoded_result = result.stdout.decode()
+    pattern = re.compile("(DATABASE_URL.*)")
+    lines = decoded_result.split('\n')
+    for line in lines:
+        if pattern.match(line):
+            db_url = pattern.match(line).group(1)
+    return db_url
+
+
 if __name__ == '__main__':
     PROJECT_NAME = input('What is the name of the new project? ')
-    create_new_wagtail_project(PROJECT_NAME)
-    modify_settings(PROJECT_NAME)
-    add_heroku_files()
+    #create_new_wagtail_project(PROJECT_NAME)
+    #modify_settings(PROJECT_NAME)
+    #add_heroku_files()
+    #initialise_git_repo()
+    #deploy_to_heroku()
+    print(get_db_url())
 
 

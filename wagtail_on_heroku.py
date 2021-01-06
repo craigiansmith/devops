@@ -24,7 +24,7 @@ def create_new_wagtail_project(PROJECT_NAME):
     exit_code = subprocess.run(['pipenv', 'run', 'wagtail', 'start', 'config', '.'])
 
 
-def modify_settings():
+def modify_settings(PROJECT_NAME):
     SETTINGS_DIR = pathlib.Path('config', 'settings')
     production_settings_content = '''
 import os
@@ -61,19 +61,59 @@ except ImportError:
     prod_settings.write(production_settings_content)
     prod_settings.close()
 
-    pattern = re.compile('.*django.middleware.security.SecurityMiddleware.*')
+    sec_middleware_pattern = re.compile("(\s*)'django.middleware.security.SecurityMiddleware.*")
+    db_engine_pattern = re.compile("(\s*)'ENGINE'.*")
+    db_name_pattern = re.compile("(\s*)'NAME':.*sqlite.*")
     base_settings = fileinput.input(base_settings_file_path, inplace=True, backup='.bak')
     for line in base_settings:
-        if pattern.match(line):
+        if sec_middleware_pattern.match(line):
             print(line, end='')
-            print("    'whitenoise.middleware.WhiteNoiseMiddleware',")
+            indent = sec_middleware_pattern.match(line).group(1)
+            print(f"{indent}'whitenoise.middleware.WhiteNoiseMiddleware',")
+        elif db_engine_pattern.match(line):
+            indent = db_engine_pattern.match(line).group(1)
+            print(f"{indent}'ENGINE': 'django.db.backends.postgresql_psycopg2',")
+        elif db_name_pattern.match(line):
+            indent = db_name_pattern.match(line).group(1)
+            print(f"{indent}'NAME': '{PROJECT_NAME}_db',")
         else:
             print(line, end='')
     base_settings.close()
 
+
+def add_heroku_files():
+    procfile = open('Procfile', 'w')
+    procfile.write('web: gunicorn config.wsgi --log-file -')
+    procfile.close()
+
+    runtime = open('runtime.txt', 'w')
+    runtime.write('python-3.9.1')
+
+    compress_script = '''
+#!/usr/bin/env bash
+set -eo pipefail
+
+indent() {
+    RE="s/^/       /"
+    [ $(uname) == "Darwin" ] && sed -l "$RE" || sed -u "$RE"
+}
+
+MANAGE_FILE=$(find . -maxdepth 3 -type f -name 'manage.py' | head -1)
+MANAGE_FILE=${MANAGE_FILE:2}
+
+echo "-----> Compressing static files"
+python $MANAGE_FILE compress 2>&1 | indent
+
+echo'''
+    run_compress = open('run_compress', 'w')
+    run_compress.write(compress_script)
+    run_compress.close()
+
+
 if __name__ == '__main__':
     PROJECT_NAME = input('What is the name of the new project? ')
     create_new_wagtail_project(PROJECT_NAME)
-    modify_settings()
+    modify_settings(PROJECT_NAME)
+    add_heroku_files()
 
 
